@@ -1,0 +1,5 @@
+.bmad-core/
+.env
+.claude/
+.cursor/
+web-bundles/
