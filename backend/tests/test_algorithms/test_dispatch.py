@@ -207,9 +207,9 @@ class TestDispatchRide:
         assert driver_id == "d2"  # Driver with fewer completed rides
 
         # Check states updated
-        assert ride.status == RideStatus.ASSIGNED.value
+        assert ride.status == RideStatus.ASSIGNED
         assert ride.assigned_driver_id == "d2"
-        assert state.drivers["d2"].status == DriverStatus.ASSIGNED.value
+        assert state.drivers["d2"].status == DriverStatus.ASSIGNED
         assert state.drivers["d2"].current_ride_id == "ride1"
 
     def test_dispatch_with_no_available_drivers(self):
@@ -236,7 +236,7 @@ class TestDispatchRide:
 
         assert success is False
         assert driver_id is None
-        assert ride.status == RideStatus.WAITING.value
+        assert ride.status == RideStatus.WAITING
 
     def test_dispatch_with_no_eligible_drivers(self):
         """Test dispatch when drivers are available but none eligible"""
@@ -348,7 +348,7 @@ class TestAttemptFallbackDispatch:
 
         assert success is False
         assert driver_id is None
-        assert ride.status == RideStatus.FAILED.value
+        assert ride.status == RideStatus.FAILED
 
 
 if __name__ == "__main__":

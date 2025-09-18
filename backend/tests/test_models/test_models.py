@@ -18,7 +18,7 @@ class TestDriverModel:
         assert driver.id == "driver1"
         assert driver.x == 50
         assert driver.y == 50
-        assert driver.status == DriverStatus.AVAILABLE.value
+        assert driver.status == DriverStatus.AVAILABLE
         assert driver.search_radius == 5
         assert driver.completed_rides == 0
         assert driver.idle_ticks == 0
@@ -63,7 +63,7 @@ class TestDriverModel:
         driver = Driver(id="driver4", x=50, y=50)
         assert driver.is_available() is True
 
-        driver.status = DriverStatus.ON_TRIP.value
+        driver.status = DriverStatus.ON_TRIP
         assert driver.is_available() is False
 
     def test_reset_idle_state(self):
@@ -89,7 +89,7 @@ class TestDriverModel:
         assert driver.search_radius == 6  # Should have grown
 
         # Test no increment when not available
-        driver.status = DriverStatus.ON_TRIP.value
+        driver.status = DriverStatus.ON_TRIP
         driver.increment_idle_tick()
         assert driver.idle_ticks == 10  # Should not change
 
@@ -103,7 +103,7 @@ class TestRiderModel:
         assert rider.id == "rider1"
         assert rider.x == 30
         assert rider.y == 40
-        assert rider.status == RiderStatus.WAITING.value
+        assert rider.status == RiderStatus.WAITING
 
     def test_create_rider_with_custom_status(self):
         """Test creating rider with custom status"""
@@ -127,7 +127,7 @@ class TestRiderModel:
         rider = Rider(id="rider4", x=50, y=50)
         assert rider.is_waiting() is True
 
-        rider.status = RiderStatus.PICKED_UP.value
+        rider.status = RiderStatus.PICKED_UP
         assert rider.is_waiting() is False
 
     def test_update_location(self):
@@ -161,7 +161,7 @@ class TestRideRequestModel:
         assert ride.pickup_y == 20
         assert ride.dropoff_x == 80
         assert ride.dropoff_y == 90
-        assert ride.status == RideStatus.WAITING.value
+        assert ride.status == RideStatus.WAITING
         assert ride.assigned_driver_id is None
         assert ride.rejected_driver_ids == []
         assert ride.created_tick == 0
@@ -221,7 +221,7 @@ class TestRideRequestModel:
         )
         assert ride.is_waiting() is True
 
-        ride.status = RideStatus.ASSIGNED.value
+        ride.status = RideStatus.ASSIGNED
         assert ride.is_waiting() is False
 
     def test_is_in_cooldown(self):
@@ -277,7 +277,7 @@ class TestRideRequestModel:
 
         ride.assign_driver("driver1")
         assert ride.assigned_driver_id == "driver1"
-        assert ride.status == RideStatus.ASSIGNED.value
+        assert ride.status == RideStatus.ASSIGNED
 
     def test_status_transitions(self):
         """Test ride status transition methods"""
@@ -291,23 +291,23 @@ class TestRideRequestModel:
         )
 
         # Start as waiting
-        assert ride.status == RideStatus.WAITING.value
+        assert ride.status == RideStatus.WAITING
 
         # Assign driver
         ride.assign_driver("driver1")
-        assert ride.status == RideStatus.ASSIGNED.value
+        assert ride.status == RideStatus.ASSIGNED
 
         # Start pickup
         ride.start_pickup()
-        assert ride.status == RideStatus.PICKUP.value
+        assert ride.status == RideStatus.PICKUP
 
         # Start trip
         ride.start_trip()
-        assert ride.status == RideStatus.ON_TRIP.value
+        assert ride.status == RideStatus.ON_TRIP
 
         # Complete
         ride.complete()
-        assert ride.status == RideStatus.COMPLETED.value
+        assert ride.status == RideStatus.COMPLETED
 
         # Test fail
         ride2 = RideRequest(
@@ -319,7 +319,7 @@ class TestRideRequestModel:
             dropoff_y=90
         )
         ride2.fail()
-        assert ride2.status == RideStatus.FAILED.value
+        assert ride2.status == RideStatus.FAILED
 
 
 class TestEnums:

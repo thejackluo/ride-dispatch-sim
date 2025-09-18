@@ -2,7 +2,7 @@
 Driver model for the ride dispatch simulation system
 """
 from typing import Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 from .enums import DriverStatus
 
@@ -105,6 +105,4 @@ class Driver(BaseModel):
             if self.idle_ticks > 0 and self.idle_ticks % 10 == 0:
                 self.search_radius = min(20, self.search_radius + 1)
 
-    class Config:
-        """Pydantic model configuration"""
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)

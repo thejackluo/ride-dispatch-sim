@@ -33,8 +33,8 @@ def find_eligible_drivers(ride: RideRequest, drivers: List[Driver],
     eligible = []
 
     for driver in drivers:
-        # Check if driver is available
-        if driver.status != DriverStatus.AVAILABLE:
+        # Check if driver is available (handle both enum and string values)
+        if driver.status not in (DriverStatus.AVAILABLE, DriverStatus.AVAILABLE.value):
             continue
 
         # Check if driver has already rejected this ride

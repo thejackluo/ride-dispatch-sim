@@ -2,7 +2,7 @@
 RideRequest model for the ride dispatch simulation system
 """
 from typing import Optional, List
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 from .enums import RideStatus
 
@@ -146,6 +146,4 @@ class RideRequest(BaseModel):
         """
         self.status = RideStatus.FAILED
 
-    class Config:
-        """Pydantic model configuration"""
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)

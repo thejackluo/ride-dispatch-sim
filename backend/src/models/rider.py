@@ -1,7 +1,7 @@
 """
 Rider model for the ride dispatch simulation system
 """
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 from .enums import RiderStatus
 
@@ -62,6 +62,4 @@ class Rider(BaseModel):
         self.x = x
         self.y = y
 
-    class Config:
-        """Pydantic model configuration"""
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
