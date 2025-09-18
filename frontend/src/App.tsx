@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react'
 import './App.css'
 
+const API_BASE_URL = 'http://localhost:8000'
+
 interface Driver {
   id: string
   x: number
   y: number
-  status: 'available' | 'on_trip' | 'offline'
-  completedRides: number
-  searchRadius: number
+  status: 'available' | 'assigned' | 'on_trip' | 'offline'
+  completed_rides: number
+  search_radius: number
+  idle_ticks: number
+  current_ride_id?: string
 }
 
 interface Rider {
@@ -19,50 +23,78 @@ interface Rider {
 
 interface RideRequest {
   id: string
-  riderId: string
-  pickupX: number
-  pickupY: number
-  dropoffX: number
-  dropoffY: number
-  status: 'waiting' | 'assigned' | 'in_progress' | 'completed' | 'failed'
-  driverId?: string
-  eta?: number
+  rider_id: string
+  pickup_x: number
+  pickup_y: number
+  dropoff_x: number
+  dropoff_y: number
+  status: 'waiting' | 'assigned' | 'pickup' | 'on_trip' | 'completed' | 'failed'
+  assigned_driver_id?: string
+  rejected_driver_ids: string[]
+  created_tick: number
+  cooldown_until_tick?: number
 }
 
 interface SimState {
+  current_tick: number
+  config: {
+    initial_search_radius: number
+    max_search_radius: number
+    radius_growth_interval: number
+    grid_size: number
+    rejection_cooldown_ticks: number
+    fairness_penalty: number
+  }
   drivers: Record<string, Driver>
   riders: Record<string, Rider>
-  rides: RideRequest[]
-  tick: number
-  fairnessPenalty: number
+  ride_requests: Record<string, RideRequest>
+  summary?: any
+}
+
+interface HoverInfo {
+  type: 'driver' | 'rider' | 'pickup' | 'dropoff' | null
+  id?: string
+  path?: { x1: number, y1: number, x2: number, y2: number }
 }
 
 function App() {
-  const [state, setState] = useState<SimState>({
-    drivers: {
-      'driver_1': { id: 'driver_1', x: 20, y: 30, status: 'available', completedRides: 0, searchRadius: 5 },
-      'driver_2': { id: 'driver_2', x: 70, y: 80, status: 'available', completedRides: 0, searchRadius: 5 },
-    },
-    riders: {
-      'rider_1': { id: 'rider_1', x: 40, y: 50, status: 'waiting' },
-    },
-    rides: [],
-    tick: 0,
-    fairnessPenalty: 1.0
-  })
+  const [state, setState] = useState<SimState | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const [isManualMode, setIsManualMode] = useState(false)
   const [manualX, setManualX] = useState('')
   const [manualY, setManualY] = useState('')
   const [dropoffX, setDropoffX] = useState('')
   const [dropoffY, setDropoffY] = useState('')
+  const [hoveredCell, setHoveredCell] = useState<{ x: number, y: number } | null>(null)
+
+  // Fetch state from backend
+  const fetchState = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/state`)
+      if (!response.ok) throw new Error('Failed to fetch state')
+      const data = await response.json()
+      setState(data)
+      setLoading(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch state')
+      setLoading(false)
+    }
+  }
+
+  // Poll state every 2 seconds
+  useEffect(() => {
+    fetchState()
+    const interval = setInterval(fetchState, 2000)
+    return () => clearInterval(interval)
+  }, [])
 
   const manhattanDistance = (x1: number, y1: number, x2: number, y2: number) => {
     return Math.abs(x1 - x2) + Math.abs(y1 - y2)
   }
 
-  const addDriver = () => {
-    const id = `driver_${Date.now()}`
+  const addDriver = async () => {
     let x: number, y: number
 
     if (isManualMode && manualX && manualY) {
@@ -73,19 +105,22 @@ function App() {
       y = Math.floor(Math.random() * 100)
     }
 
-    setState(prev => ({
-      ...prev,
-      drivers: {
-        ...prev.drivers,
-        [id]: { id, x, y, status: 'available', completedRides: 0, searchRadius: 5 }
-      }
-    }))
+    try {
+      const response = await fetch(`${API_BASE_URL}/drivers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ x, y })
+      })
+      if (!response.ok) throw new Error('Failed to add driver')
+      await fetchState() // Refresh state
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add driver')
+    }
     setManualX('')
     setManualY('')
   }
 
-  const addRider = () => {
-    const id = `rider_${Date.now()}`
+  const addRider = async () => {
     let x: number, y: number
 
     if (isManualMode && manualX && manualY) {
@@ -96,24 +131,28 @@ function App() {
       y = Math.floor(Math.random() * 100)
     }
 
-    setState(prev => ({
-      ...prev,
-      riders: {
-        ...prev.riders,
-        [id]: { id, x, y, status: 'waiting' }
-      }
-    }))
+    try {
+      const response = await fetch(`${API_BASE_URL}/riders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ x, y })
+      })
+      if (!response.ok) throw new Error('Failed to add rider')
+      await fetchState() // Refresh state
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add rider')
+    }
     setManualX('')
     setManualY('')
   }
 
-  const requestRide = (riderId: string) => {
+  const requestRide = async (riderId: string) => {
+    if (!state) return
     const rider = state.riders[riderId]
     if (!rider || rider.status !== 'waiting') {
       return
     }
 
-    const rideId = `ride_${Date.now()}`
     let destX: number, destY: number
 
     if (isManualMode && dropoffX && dropoffY) {
@@ -124,151 +163,244 @@ function App() {
       destY = Math.floor(Math.random() * 100)
     }
 
-    const newRide: RideRequest = {
-      id: rideId,
-      riderId: rider.id,
-      pickupX: rider.x,
-      pickupY: rider.y,
-      dropoffX: destX,
-      dropoffY: destY,
-      status: 'waiting'
-    }
-
-    const availableDrivers = Object.values(state.drivers).filter(d => d.status === 'available')
-
-    if (availableDrivers.length > 0) {
-      const sortedDrivers = availableDrivers
-        .map(driver => ({
-          driver,
-          distance: manhattanDistance(driver.x, driver.y, rider.x, rider.y),
-          fairnessScore: driver.completedRides * state.fairnessPenalty
-        }))
-        .sort((a, b) => {
-          if (a.fairnessScore !== b.fairnessScore) {
-            return a.fairnessScore - b.fairnessScore
-          }
-          return a.distance - b.distance
+    try {
+      const response = await fetch(`${API_BASE_URL}/rides`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rider_id: riderId,
+          pickup_x: rider.x,
+          pickup_y: rider.y,
+          dropoff_x: destX,
+          dropoff_y: destY
         })
-
-      const selectedDriver = sortedDrivers[0].driver
-      const eta = sortedDrivers[0].distance
-
-      newRide.status = 'assigned'
-      newRide.driverId = selectedDriver.id
-      newRide.eta = eta
-
-      setState(prev => ({
-        ...prev,
-        drivers: {
-          ...prev.drivers,
-          [selectedDriver.id]: { ...selectedDriver, status: 'on_trip' }
-        },
-        riders: {
-          ...prev.riders,
-          [rider.id]: { ...rider, status: 'picked_up' }
-        },
-        rides: [...prev.rides, newRide]
-      }))
-    } else {
-      newRide.status = 'failed'
-      setState(prev => ({
-        ...prev,
-        rides: [...prev.rides, newRide]
-      }))
+      })
+      if (!response.ok) throw new Error('Failed to request ride')
+      await fetchState() // Refresh state
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to request ride')
     }
     setDropoffX('')
     setDropoffY('')
   }
 
-  const nextTick = () => {
-    setState(prev => {
-      const newState = { ...prev, tick: prev.tick + 1 }
-      const updatedDrivers = { ...prev.drivers }
-      const updatedRiders = { ...prev.riders }
-      const updatedRides = [...prev.rides]
+  const nextTick = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/tick`, {
+        method: 'POST'
+      })
+      if (!response.ok) throw new Error('Failed to advance tick')
+      await fetchState() // Refresh state
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to advance tick')
+    }
+  }
 
-      updatedRides.forEach((ride, index) => {
-        if (ride.status === 'assigned' && ride.driverId) {
-          const driver = updatedDrivers[ride.driverId]
-          const rider = updatedRiders[ride.riderId]
+  const getEntityAtPosition = (x: number, y: number) => {
+    if (!state) return { drivers: [], riders: [] }
+    const drivers = Object.values(state.drivers).filter(d => d.x === x && d.y === y)
+    const riders = Object.values(state.riders).filter(r => r.x === x && r.y === y)
+    return { drivers, riders }
+  }
 
-          if (driver && rider) {
-            const toPickup = manhattanDistance(driver.x, driver.y, ride.pickupX, ride.pickupY)
+  const getPathForCell = (x: number, y: number) => {
+    const paths: HoverInfo[] = []
+    if (!state) return paths
 
-            if (toPickup > 0) {
-              const dx = ride.pickupX > driver.x ? 1 : ride.pickupX < driver.x ? -1 : 0
-              const dy = ride.pickupY > driver.y ? 1 : ride.pickupY < driver.y ? -1 : 0
+    // Check for drivers at this position
+    const driversHere = Object.values(state.drivers).filter(d => d.x === x && d.y === y)
+    driversHere.forEach(driver => {
+      const activeRide = Object.values(state.ride_requests).find(
+        r => r.assigned_driver_id === driver.id &&
+        (r.status === 'assigned' || r.status === 'pickup' || r.status === 'on_trip')
+      )
+      if (activeRide) {
+        if (activeRide.status === 'assigned' || activeRide.status === 'pickup') {
+          // Path to pickup
+          paths.push({
+            type: 'driver',
+            id: driver.id,
+            path: { x1: driver.x, y1: driver.y, x2: activeRide.pickup_x, y2: activeRide.pickup_y }
+          })
+        } else if (activeRide.status === 'on_trip') {
+          // Path to dropoff
+          paths.push({
+            type: 'driver',
+            id: driver.id,
+            path: { x1: driver.x, y1: driver.y, x2: activeRide.dropoff_x, y2: activeRide.dropoff_y }
+          })
+        }
+      }
+    })
 
-              if (dx !== 0) {
-                driver.x += dx
-              } else if (dy !== 0) {
-                driver.y += dy
+    // Check for riders at this position
+    const ridersHere = Object.values(state.riders).filter(r => r.x === x && r.y === y)
+    ridersHere.forEach(rider => {
+      const activeRide = Object.values(state.ride_requests).find(
+        r => r.rider_id === rider.id &&
+        (r.status === 'assigned' || r.status === 'pickup' || r.status === 'on_trip')
+      )
+      if (activeRide) {
+        paths.push({
+          type: 'rider',
+          id: rider.id,
+          path: { x1: activeRide.pickup_x, y1: activeRide.pickup_y, x2: activeRide.dropoff_x, y2: activeRide.dropoff_y }
+        })
+      }
+    })
+
+    return paths
+  }
+
+  const getCellStyle = (x: number, y: number, hasAvailableDriver: boolean, hasOnTripDriver: boolean, hasRider: boolean) => {
+    if (!state) return { backgroundColor: 'white', width: '8px', height: '8px' }
+
+    const paths = hoveredCell ? getPathForCell(hoveredCell.x, hoveredCell.y) : []
+
+    let isOnPath = false
+    let isPickup = false
+    let isDropoff = false
+    let isHoveredEntity = false
+
+    // Check if we're hovering over an entity
+    if (hoveredCell) {
+      if (x === hoveredCell.x && y === hoveredCell.y) {
+        isHoveredEntity = true
+      }
+
+      paths.forEach(pathInfo => {
+        if (pathInfo.path) {
+          const { x1, y1, x2, y2 } = pathInfo.path
+
+          // For riders, show the entire trip path
+          if (pathInfo.type === 'rider') {
+            const ride = Object.values(state.ride_requests).find(
+              r => r.rider_id === pathInfo.id &&
+              (r.status === 'assigned' || r.status === 'pickup' || r.status === 'on_trip')
+            )
+            if (ride) {
+              // Mark pickup and dropoff
+              if (x === ride.pickup_x && y === ride.pickup_y) isPickup = true
+              if (x === ride.dropoff_x && y === ride.dropoff_y) isDropoff = true
+
+              // Show path from pickup to dropoff
+              if (isOnManhattanPath(x, y, ride.pickup_x, ride.pickup_y, ride.dropoff_x, ride.dropoff_y)) {
+                isOnPath = true
               }
-              updatedDrivers[driver.id] = driver
-            } else {
-              updatedRides[index] = { ...ride, status: 'in_progress' }
-              rider.status = 'picked_up'
-              updatedRiders[rider.id] = rider
             }
           }
-        } else if (ride.status === 'in_progress' && ride.driverId) {
-          const driver = updatedDrivers[ride.driverId]
 
-          if (driver) {
-            const toDropoff = manhattanDistance(driver.x, driver.y, ride.dropoffX, ride.dropoffY)
-
-            if (toDropoff > 0) {
-              const dx = ride.dropoffX > driver.x ? 1 : ride.dropoffX < driver.x ? -1 : 0
-              const dy = ride.dropoffY > driver.y ? 1 : ride.dropoffY < driver.y ? -1 : 0
-
-              if (dx !== 0) {
-                driver.x += dx
-              } else if (dy !== 0) {
-                driver.y += dy
-              }
-              updatedDrivers[driver.id] = driver
-            } else {
-              updatedRides[index] = { ...ride, status: 'completed' }
-              driver.status = 'available'
-              driver.completedRides += 1
-              updatedDrivers[driver.id] = driver
-
-              const rider = updatedRiders[ride.riderId]
-              if (rider) {
-                rider.status = 'completed'
-                rider.x = ride.dropoffX
-                rider.y = ride.dropoffY
-                updatedRiders[rider.id] = rider
+          // For drivers, show path to current destination
+          if (pathInfo.type === 'driver') {
+            const ride = Object.values(state.ride_requests).find(
+              r => r.assigned_driver_id === pathInfo.id &&
+              (r.status === 'assigned' || r.status === 'pickup' || r.status === 'on_trip')
+            )
+            if (ride) {
+              if (ride.status === 'assigned' || ride.status === 'pickup') {
+                // Going to pickup
+                if (x === ride.pickup_x && y === ride.pickup_y) isPickup = true
+                if (isOnManhattanPath(x, y, x1, y1, x2, y2)) {
+                  isOnPath = true
+                }
+              } else if (ride.status === 'on_trip') {
+                // Going to dropoff
+                if (x === ride.dropoff_x && y === ride.dropoff_y) isDropoff = true
+                if (isOnManhattanPath(x, y, x1, y1, x2, y2)) {
+                  isOnPath = true
+                }
               }
             }
           }
         }
       })
+    }
 
-      return {
-        ...newState,
-        drivers: updatedDrivers,
-        riders: updatedRiders,
-        rides: updatedRides
+    // Check if this cell has a driver with a rider (picked up)
+    const driversHere = Object.values(state.drivers).filter(d => d.x === x && d.y === y)
+    const hasDriverWithRider = driversHere.some(driver => {
+      const ride = Object.values(state.ride_requests).find(
+        r => r.assigned_driver_id === driver.id && r.status === 'on_trip'
+      )
+      if (ride) {
+        const rider = state.riders[ride.rider_id]
+        return rider && rider.status === 'picked_up'
       }
+      return false
     })
+
+    let backgroundColor = 'white'
+    if (hasDriverWithRider) backgroundColor = '#FF6B35' // Orange-red for driver with rider
+    else if (hasOnTripDriver) backgroundColor = '#FFA500'
+    else if (hasAvailableDriver) backgroundColor = '#4CAF50'
+    else if (hasRider) backgroundColor = '#F44336'
+    else if (isPickup) backgroundColor = '#2196F3'
+    else if (isDropoff) backgroundColor = '#9C27B0'
+    else if (isOnPath) backgroundColor = '#FFE082'
+
+    return {
+      width: '8px',
+      height: '8px',
+      backgroundColor,
+      border: isHoveredEntity ? '2px solid #000' : (hasOnTripDriver || hasAvailableDriver || hasRider || isPickup || isDropoff || isOnPath) ? '1px solid rgba(0,0,0,0.3)' : '1px solid #f5f5f5',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: '6px',
+      fontWeight: 'bold',
+      cursor: 'pointer',
+      position: 'relative' as const,
+      boxSizing: 'border-box' as const
+    }
   }
 
-  const getEntityAtPosition = (x: number, y: number) => {
-    const drivers = Object.values(state.drivers).filter(d => d.x === x && d.y === y)
-    const riders = Object.values(state.riders).filter(r => r.x === x && r.y === y && r.status !== 'completed')
-    return { drivers, riders }
+  const isOnManhattanPath = (cellX: number, cellY: number, startX: number, startY: number, endX: number, endY: number) => {
+    // Manhattan path: go horizontally first, then vertically (or vice versa)
+    const onHorizontalPath = cellY === startY && cellX >= Math.min(startX, endX) && cellX <= Math.max(startX, endX)
+    const onVerticalPath = cellX === endX && cellY >= Math.min(startY, endY) && cellY <= Math.max(startY, endY)
+    return onHorizontalPath || onVerticalPath
+  }
+
+  const resetSimulation = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/reset`, {
+        method: 'POST'
+      })
+      if (!response.ok) throw new Error('Failed to reset simulation')
+      await fetchState() // Refresh state
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reset simulation')
+    }
+  }
+
+  if (loading) {
+    return (
+      <div style={{ padding: '20px', fontFamily: 'monospace' }}>
+        <h1>🛺 Ride Dispatch Simulator</h1>
+        <p>Loading...</p>
+      </div>
+    )
+  }
+
+  if (!state) {
+    return (
+      <div style={{ padding: '20px', fontFamily: 'monospace' }}>
+        <h1>🛺 Ride Dispatch Simulator</h1>
+        <p>Error: Failed to connect to backend. Make sure the backend is running on port 8000.</p>
+      </div>
+    )
   }
 
   return (
     <div className="App" style={{ padding: '20px', fontFamily: 'monospace' }}>
       <header>
         <h1>🛺 Ride Dispatch Simulator</h1>
-        <p style={{ color: '#666' }}>Tick: {state.tick} | Fairness Penalty: {state.fairnessPenalty}</p>
+        <p style={{ color: '#666' }}>Tick: {state.current_tick} | Fairness Penalty: {state.config.fairness_penalty}</p>
+        {error && <p style={{ color: 'red' }}>Error: {error}</p>}
       </header>
 
-      <main style={{ display: 'flex', gap: '20px', marginTop: '20px', flexWrap: 'wrap' }}>
-        <div style={{ minWidth: '300px' }}>
+      <main style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
+        <div style={{ minWidth: '300px', flexShrink: 0 }}>
           <section className="controls" style={{ marginBottom: '20px' }}>
             <h3>Controls</h3>
 
@@ -350,15 +482,33 @@ function App() {
               <label>Fairness Penalty: </label>
               <input
                 type="number"
-                value={state.fairnessPenalty}
-                onChange={e => setState(prev => ({ ...prev, fairnessPenalty: parseFloat(e.target.value) || 1 }))}
+                value={state.config.fairness_penalty}
+                onChange={async (e) => {
+                  const value = parseFloat(e.target.value) || 1
+                  try {
+                    const response = await fetch(`${API_BASE_URL}/config`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ fairness_penalty: value })
+                    })
+                    if (!response.ok) throw new Error('Failed to update config')
+                    await fetchState()
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Failed to update config')
+                  }
+                }}
                 style={{ width: '60px', marginLeft: '10px' }}
                 step="0.1"
               />
             </div>
+            <div style={{ marginTop: '10px' }}>
+              <button onClick={resetSimulation} style={{ padding: '8px 16px', cursor: 'pointer', backgroundColor: '#FF5722', color: 'white', border: 'none', borderRadius: '4px' }}>
+                Reset Simulation 🔄
+              </button>
+            </div>
           </section>
 
-          <section className="grid-container" style={{ flex: 1 }}>
+          <section className="grid-container" style={{ flex: 1, minWidth: '0' }}>
             <h3>City Grid (100x100)</h3>
             <div style={{
               display: 'grid',
@@ -375,50 +525,66 @@ function App() {
                 const { drivers, riders } = getEntityAtPosition(x, y)
 
                 const hasAvailableDriver = drivers.some(d => d.status === 'available')
-                const hasOnTripDriver = drivers.some(d => d.status === 'on_trip')
+                const hasOnTripDriver = drivers.some(d => d.status === 'assigned' || d.status === 'on_trip' || d.status === 'pickup')
                 const hasRider = riders.length > 0
+
+                const paths = hoveredCell ? getPathForCell(hoveredCell.x, hoveredCell.y) : []
+                let tooltipExtra = ''
+
+                if (hasOnTripDriver) {
+                  const driver = drivers[0]
+                  const ride = Object.values(state.ride_requests).find(
+                    r => r.assigned_driver_id === driver.id &&
+                    (r.status === 'assigned' || r.status === 'pickup' || r.status === 'on_trip')
+                  )
+                  if (ride) {
+                    if (ride.status === 'assigned' || ride.status === 'pickup') {
+                      tooltipExtra = ` → Pickup at (${ride.pickup_x}, ${ride.pickup_y})`
+                    } else {
+                      tooltipExtra = ` → Dropoff at (${ride.dropoff_x}, ${ride.dropoff_y})`
+                    }
+                  }
+                }
 
                 return (
                   <div
                     key={i}
-                    style={{
-                      width: '8px',
-                      height: '8px',
-                      backgroundColor: hasOnTripDriver ? '#FFA500' : hasAvailableDriver ? '#4CAF50' : hasRider ? '#F44336' : 'white',
-                      border: hasOnTripDriver || hasAvailableDriver || hasRider ? '1px solid rgba(0,0,0,0.3)' : '1px solid #f5f5f5',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '6px',
-                      fontWeight: 'bold',
-                      cursor: 'pointer',
-                      position: 'relative'
-                    }}
-                    title={`(${x}, ${y})${hasAvailableDriver ? ' - Driver (available)' : ''}${hasOnTripDriver ? ' - Driver (on trip)' : ''}${hasRider ? ' - Rider' : ''}`}
+                    style={getCellStyle(x, y, hasAvailableDriver, hasOnTripDriver, hasRider)}
+                    title={`(${x}, ${y})${hasAvailableDriver ? ' - Driver (available)' : ''}${hasOnTripDriver ? ' - Driver (on trip)' + tooltipExtra : ''}${hasRider ? ' - Rider' : ''}`}
+                    onMouseEnter={() => setHoveredCell({ x, y })}
+                    onMouseLeave={() => setHoveredCell(null)}
                   >
                   </div>
                 )
               })}
             </div>
             <div style={{ marginTop: '10px', fontSize: '12px' }}>
-              <span style={{ display: 'inline-block', width: '15px', height: '10px', backgroundColor: '#4CAF50', marginRight: '5px' }}></span> Available Driver
-              <span style={{ display: 'inline-block', width: '15px', height: '10px', backgroundColor: '#FFA500', marginLeft: '10px', marginRight: '5px' }}></span> Driver On Trip
-              <span style={{ display: 'inline-block', width: '15px', height: '10px', backgroundColor: '#F44336', marginLeft: '10px', marginRight: '5px' }}></span> Rider
-              <span style={{ marginLeft: '20px', color: '#666' }}>Hover over cells for coordinates</span>
+              <div>
+                <span style={{ display: 'inline-block', width: '15px', height: '10px', backgroundColor: '#4CAF50', marginRight: '5px' }}></span> Available Driver
+                <span style={{ display: 'inline-block', width: '15px', height: '10px', backgroundColor: '#FFA500', marginLeft: '10px', marginRight: '5px' }}></span> Driver On Trip
+                <span style={{ display: 'inline-block', width: '15px', height: '10px', backgroundColor: '#FF6B35', marginLeft: '10px', marginRight: '5px' }}></span> Driver with Rider
+                <span style={{ display: 'inline-block', width: '15px', height: '10px', backgroundColor: '#F44336', marginLeft: '10px', marginRight: '5px' }}></span> Rider Waiting
+              </div>
+              <div style={{ marginTop: '5px' }}>
+                <span style={{ display: 'inline-block', width: '15px', height: '10px', backgroundColor: '#2196F3', marginRight: '5px' }}></span> Pickup Location
+                <span style={{ display: 'inline-block', width: '15px', height: '10px', backgroundColor: '#9C27B0', marginLeft: '10px', marginRight: '5px' }}></span> Dropoff Location
+                <span style={{ display: 'inline-block', width: '15px', height: '10px', backgroundColor: '#FFE082', marginLeft: '10px', marginRight: '5px' }}></span> Path (on hover)
+              </div>
+              <div style={{ marginTop: '5px', color: '#666' }}>Hover over drivers/riders to see their paths</div>
             </div>
           </section>
         </div>
 
-        <div style={{ minWidth: '400px' }}>
+        <div style={{ minWidth: '400px', flexShrink: 0, maxHeight: 'calc(100vh - 150px)', overflowY: 'auto' }}>
           <section className="status">
             <h3>Riders ({Object.keys(state.riders).length})</h3>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f5f5f5' }}>
-                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>ID</th>
-                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>Position</th>
-                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>Status</th>
-                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>Actions</th>
+                <tr style={{ backgroundColor: '#e0e0e0' }}>
+                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #999', color: '#000', fontWeight: 'bold' }}>ID</th>
+                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #999', color: '#000', fontWeight: 'bold' }}>Position</th>
+                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #999', color: '#000', fontWeight: 'bold' }}>Status</th>
+                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #999', color: '#000', fontWeight: 'bold' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -459,11 +625,13 @@ function App() {
             <h3 style={{ marginTop: '20px' }}>Drivers ({Object.keys(state.drivers).length})</h3>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f5f5f5' }}>
-                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>ID</th>
-                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>Position</th>
-                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>Status</th>
-                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>Rides</th>
+                <tr style={{ backgroundColor: '#e0e0e0' }}>
+                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #999', color: '#000', fontWeight: 'bold' }}>ID</th>
+                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #999', color: '#000', fontWeight: 'bold' }}>Position</th>
+                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #999', color: '#000', fontWeight: 'bold' }}>Status</th>
+                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #999', color: '#000', fontWeight: 'bold' }}>Rides</th>
+                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #999', color: '#000', fontWeight: 'bold' }}>Radius</th>
+                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #999', color: '#000', fontWeight: 'bold' }}>Idle</th>
                 </tr>
               </thead>
               <tbody>
@@ -473,44 +641,49 @@ function App() {
                     <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>({driver.x}, {driver.y})</td>
                     <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>
                       <span style={{
-                        color: driver.status === 'available' ? 'green' : driver.status === 'on_trip' ? 'orange' : 'gray'
+                        color: driver.status === 'available' ? 'green' : driver.status === 'assigned' || driver.status === 'on_trip' ? 'orange' : 'gray'
                       }}>
                         {driver.status}
                       </span>
                     </td>
-                    <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>{driver.completedRides}</td>
+                    <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>{driver.completed_rides}</td>
+                    <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>{driver.search_radius}</td>
+                    <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>{driver.idle_ticks}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
 
-            <h3 style={{ marginTop: '20px' }}>Active Rides ({state.rides.filter(r => r.status !== 'completed' && r.status !== 'failed').length})</h3>
+            <h3 style={{ marginTop: '20px' }}>Active Rides ({Object.values(state.ride_requests).filter(r => r.status !== 'completed' && r.status !== 'failed').length})</h3>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ backgroundColor: '#f5f5f5' }}>
-                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>ID</th>
-                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>Status</th>
-                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>Pickup</th>
-                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>Dropoff</th>
-                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #ddd' }}>Driver</th>
+                <tr style={{ backgroundColor: '#e0e0e0' }}>
+                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #999', color: '#000', fontWeight: 'bold' }}>ID</th>
+                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #999', color: '#000', fontWeight: 'bold' }}>Status</th>
+                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #999', color: '#000', fontWeight: 'bold' }}>Pickup</th>
+                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #999', color: '#000', fontWeight: 'bold' }}>Dropoff</th>
+                  <th style={{ padding: '8px', textAlign: 'left', borderBottom: '2px solid #999', color: '#000', fontWeight: 'bold' }}>Driver</th>
                 </tr>
               </thead>
               <tbody>
-                {state.rides
+                {Object.values(state.ride_requests)
                   .filter(ride => ride.status !== 'completed' && ride.status !== 'failed')
                   .map(ride => (
                     <tr key={ride.id}>
                       <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>{ride.id}</td>
                       <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>
                         <span style={{
-                          color: ride.status === 'waiting' ? 'orange' : ride.status === 'assigned' ? 'blue' : 'green'
+                          color: ride.status === 'waiting' ? 'orange' :
+                                 ride.status === 'assigned' ? 'blue' :
+                                 ride.status === 'pickup' ? 'purple' :
+                                 ride.status === 'on_trip' ? 'indigo' : 'green'
                         }}>
                           {ride.status}
                         </span>
                       </td>
-                      <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>({ride.pickupX}, {ride.pickupY})</td>
-                      <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>({ride.dropoffX}, {ride.dropoffY})</td>
-                      <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>{ride.driverId || '-'}</td>
+                      <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>({ride.pickup_x}, {ride.pickup_y})</td>
+                      <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>({ride.dropoff_x}, {ride.dropoff_y})</td>
+                      <td style={{ padding: '6px', borderBottom: '1px solid #eee' }}>{ride.assigned_driver_id || '-'}</td>
                     </tr>
                   ))}
               </tbody>
@@ -522,8 +695,8 @@ function App() {
               <p>Available Drivers: {Object.values(state.drivers).filter(d => d.status === 'available').length}</p>
               <p>Total Riders: {Object.keys(state.riders).length}</p>
               <p>Waiting Riders: {Object.values(state.riders).filter(r => r.status === 'waiting').length}</p>
-              <p>Completed Rides: {state.rides.filter(r => r.status === 'completed').length}</p>
-              <p>Failed Rides: {state.rides.filter(r => r.status === 'failed').length}</p>
+              <p>Completed Rides: {Object.values(state.ride_requests).filter(r => r.status === 'completed').length}</p>
+              <p>Failed Rides: {Object.values(state.ride_requests).filter(r => r.status === 'failed').length}</p>
             </div>
           </section>
         </div>

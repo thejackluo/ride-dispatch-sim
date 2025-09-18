@@ -139,10 +139,21 @@ def dispatch_ride(ride_id: str, state: SimulationState) -> Tuple[bool, Optional[
         logger.info(f"No available drivers for ride {ride_id}")
         return False, None
 
-    # Find eligible drivers within search radius
-    eligible_drivers = find_eligible_drivers(ride, available_drivers)
+    # Check if ride has been waiting too long - make it globally available
+    ride_wait_time = state.current_tick - ride.created_tick
+    if ride_wait_time >= state.config.global_search_after_ticks:
+        # Make ride available to ALL available drivers regardless of distance
+        eligible_drivers = [
+            driver for driver in available_drivers
+            if driver.id not in ride.rejected_driver_ids
+        ]
+        logger.info(f"Ride {ride_id} has waited {ride_wait_time} ticks - making globally available")
+    else:
+        # Normal search within driver radius
+        eligible_drivers = find_eligible_drivers(ride, available_drivers)
+
     if not eligible_drivers:
-        logger.info(f"No eligible drivers within search radius for ride {ride_id}")
+        logger.info(f"No eligible drivers for ride {ride_id}")
         return False, None
 
     # Prioritize drivers based on fairness and efficiency

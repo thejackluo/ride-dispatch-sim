@@ -13,12 +13,13 @@ class SimulationConfig:
     """
     Configuration parameters for the simulation
     """
-    initial_search_radius: int = 5
-    max_search_radius: int = 20
-    radius_growth_interval: int = 10  # Grow radius every N idle ticks
+    initial_search_radius: int = 10  # Start with larger radius
+    max_search_radius: int = 50  # Much larger max radius
+    radius_growth_interval: int = 2  # Grow radius every 2 idle ticks (much faster)
     grid_size: int = 100
     rejection_cooldown_ticks: int = 5
     fairness_penalty: float = 1.0  # Weight for fairness in dispatch algorithm
+    global_search_after_ticks: int = 10  # Make ride available everywhere after N ticks
 
 
 class SimulationState:
