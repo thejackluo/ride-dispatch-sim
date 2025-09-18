@@ -90,9 +90,6 @@ function App() {
     return () => clearInterval(interval)
   }, [])
 
-  const manhattanDistance = (x1: number, y1: number, x2: number, y2: number) => {
-    return Math.abs(x1 - x2) + Math.abs(y1 - y2)
-  }
 
   const addDriver = async () => {
     let x: number, y: number
@@ -525,10 +522,9 @@ function App() {
                 const { drivers, riders } = getEntityAtPosition(x, y)
 
                 const hasAvailableDriver = drivers.some(d => d.status === 'available')
-                const hasOnTripDriver = drivers.some(d => d.status === 'assigned' || d.status === 'on_trip' || d.status === 'pickup')
+                const hasOnTripDriver = drivers.some(d => d.status === 'assigned' || d.status === 'on_trip')
                 const hasRider = riders.length > 0
 
-                const paths = hoveredCell ? getPathForCell(hoveredCell.x, hoveredCell.y) : []
                 let tooltipExtra = ''
 
                 if (hasOnTripDriver) {

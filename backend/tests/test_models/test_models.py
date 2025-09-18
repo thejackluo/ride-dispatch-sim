@@ -19,7 +19,7 @@ class TestDriverModel:
         assert driver.x == 50
         assert driver.y == 50
         assert driver.status == DriverStatus.AVAILABLE
-        assert driver.search_radius == 5
+        assert driver.search_radius == 10  # Updated default
         assert driver.completed_rides == 0
         assert driver.idle_ticks == 0
         assert driver.current_ride_id is None
@@ -56,7 +56,7 @@ class TestDriverModel:
         with pytest.raises(ValidationError):
             Driver(id="driver3", x=50, y=50, search_radius=0)
         with pytest.raises(ValidationError):
-            Driver(id="driver3", x=50, y=50, search_radius=21)
+            Driver(id="driver3", x=50, y=50, search_radius=51)  # Updated max to 50
 
     def test_is_available_method(self):
         """Test is_available method"""
@@ -71,27 +71,32 @@ class TestDriverModel:
         driver = Driver(id="driver5", x=50, y=50, idle_ticks=50, search_radius=15)
         driver.reset_idle_state()
         assert driver.idle_ticks == 0
-        assert driver.search_radius == 5
+        assert driver.search_radius == 10  # Updated default
 
     def test_increment_idle_tick(self):
         """Test increment_idle_tick method"""
         driver = Driver(id="driver6", x=50, y=50)
 
         # Test increment for available driver
-        for i in range(1, 10):
-            driver.increment_idle_tick()
-            assert driver.idle_ticks == i
-            assert driver.search_radius == 5  # No growth yet
-
-        # Test radius growth at 10 ticks
         driver.increment_idle_tick()
-        assert driver.idle_ticks == 10
-        assert driver.search_radius == 6  # Should have grown
+        assert driver.idle_ticks == 1
+        assert driver.search_radius == 10  # No growth yet
+
+        # Test radius growth at 2 ticks (grows by 3)
+        driver.increment_idle_tick()
+        assert driver.idle_ticks == 2
+        assert driver.search_radius == 13  # Should have grown by 3
+
+        # Test another growth at 4 ticks
+        driver.increment_idle_tick()
+        driver.increment_idle_tick()
+        assert driver.idle_ticks == 4
+        assert driver.search_radius == 16  # Should have grown by another 3
 
         # Test no increment when not available
         driver.status = DriverStatus.ON_TRIP
         driver.increment_idle_tick()
-        assert driver.idle_ticks == 10  # Should not change
+        assert driver.idle_ticks == 4  # Should not change
 
 
 class TestRiderModel:

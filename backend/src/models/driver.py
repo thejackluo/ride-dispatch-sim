@@ -19,10 +19,10 @@ class Driver(BaseModel):
         description="Current driver status"
     )
     search_radius: int = Field(
-        default=5,
+        default=15,  # Increased default from 5 to 15
         ge=1,
-        le=20,
-        description="Current search radius for accepting rides (1-20 units)"
+        le=100,  # Full map coverage
+        description="Current search radius for accepting rides (1-100 units)"
     )
     completed_rides: int = Field(
         default=0,
@@ -92,7 +92,7 @@ class Driver(BaseModel):
         Typically called when driver accepts a ride
         """
         self.idle_ticks = 0
-        self.search_radius = 5  # Reset to initial radius
+        self.search_radius = 15  # Reset to initial radius (now 15)
 
     def increment_idle_tick(self) -> None:
         """
@@ -101,8 +101,8 @@ class Driver(BaseModel):
         """
         if self.status == DriverStatus.AVAILABLE:
             self.idle_ticks += 1
-            # Grow search radius every 10 idle ticks, up to max of 20
-            if self.idle_ticks > 0 and self.idle_ticks % 10 == 0:
-                self.search_radius = min(20, self.search_radius + 1)
+            # Grow search radius every 2 idle ticks by 10 units, up to max of 100
+            if self.idle_ticks > 0 and self.idle_ticks % 2 == 0:
+                self.search_radius = min(100, self.search_radius + 10)
 
     model_config = ConfigDict(use_enum_values=True)

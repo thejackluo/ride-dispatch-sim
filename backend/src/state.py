@@ -13,8 +13,8 @@ class SimulationConfig:
     """
     Configuration parameters for the simulation
     """
-    initial_search_radius: int = 10  # Start with larger radius
-    max_search_radius: int = 50  # Much larger max radius
+    initial_search_radius: int = 15  # Start with even larger radius
+    max_search_radius: int = 100  # Full map coverage
     radius_growth_interval: int = 2  # Grow radius every 2 idle ticks (much faster)
     grid_size: int = 100
     rejection_cooldown_ticks: int = 5

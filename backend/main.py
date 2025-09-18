@@ -68,6 +68,7 @@ class ConfigUpdate(BaseModel):
     max_search_radius: Optional[int] = None
     radius_growth_interval: Optional[int] = None
     rejection_cooldown_ticks: Optional[int] = None
+    global_search_after_ticks: Optional[int] = None
 
 
 @app.get("/")
@@ -285,7 +286,8 @@ def update_config(config_data: ConfigUpdate):
                 "max_search_radius": simulation_state.config.max_search_radius,
                 "radius_growth_interval": simulation_state.config.radius_growth_interval,
                 "rejection_cooldown_ticks": simulation_state.config.rejection_cooldown_ticks,
-                "fairness_penalty": simulation_state.config.fairness_penalty
+                "fairness_penalty": simulation_state.config.fairness_penalty,
+                "global_search_after_ticks": simulation_state.config.global_search_after_ticks
             }
         }
     except ValueError as e:

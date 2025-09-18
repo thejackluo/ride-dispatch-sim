@@ -145,11 +145,11 @@ def update_driver_search_radius(driver: Driver, config: SimulationConfig) -> int
     if (driver.idle_ticks > 0 and
         driver.idle_ticks % config.radius_growth_interval == 0):
 
-        # Increase radius up to maximum
+        # Increase radius up to maximum (grow by 10 units at a time for faster growth)
         old_radius = driver.search_radius
         driver.search_radius = min(
             config.max_search_radius,
-            driver.search_radius + 1
+            driver.search_radius + 10
         )
 
         if driver.search_radius > old_radius:
