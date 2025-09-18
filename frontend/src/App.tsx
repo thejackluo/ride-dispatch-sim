@@ -1,34 +1,49 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
 import './App.css'
 
+/**
+ * Main Application Component
+ * Provides the primary UI for the Ride Dispatch Simulator
+ * Currently displays a placeholder for the grid visualization
+ */
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+    <div className="App">
+      <header>
+        <h1>🛺 Ride Dispatch Simulator</h1>
+      </header>
+
+      <main>
+        <section className="controls">
+          <h2>Controls</h2>
+          <div className="control-buttons">
+            <button>Add Driver</button>
+            <button>Add Rider</button>
+            <button>Request Ride</button>
+            <button>Next Tick</button>
+          </div>
+        </section>
+
+        <section className="grid-container">
+          <h2>City Grid</h2>
+          <div className="grid-placeholder" style={{
+            width: '500px',
+            height: '500px',
+            border: '2px solid #ccc',
+            backgroundColor: '#f5f5f5',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <p>Grid visualization placeholder (100x100)</p>
+          </div>
+        </section>
+
+        <section className="status">
+          <h2>System Status</h2>
+          <p>Ready to connect to backend API</p>
+        </section>
+      </main>
+    </div>
   )
 }
 
