@@ -14,8 +14,8 @@ This system simulates a ride-hailing platform with:
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.12+
-- Node.js 20+
+- Python 3.11+ (tested with 3.13)
+- Node.js 18+
 - Git
 
 ### Setup & Run
@@ -28,8 +28,16 @@ cd ride-dispatch-sim
 # Backend setup
 cd backend
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Activate virtual environment
+# Windows PowerShell:
+venv\Scripts\activate
+# Linux/Mac:
+source venv/bin/activate
+
 pip install -r requirements.txt
+
+# Run the backend server
 uvicorn main:app --reload
 ```
 
@@ -37,13 +45,13 @@ uvicorn main:app --reload
 ```bash
 cd frontend
 npm install
-npm start
+npm run dev
 ```
 
 **3. Access the Application:**
 - Backend API: http://localhost:8000
 - API Documentation: http://localhost:8000/docs
-- Frontend UI: http://localhost:3000
+- Frontend UI: http://localhost:5173 (Vite dev server)
 
 ## 🧩 System Architecture
 
